@@ -1,24 +1,26 @@
 /*
- * 京东首页 & 我的页 精简脚本 (Loon http-response)
- * 目标：① 关闭首页「猜你喜欢/为你推荐」信息流 ② 去除首页广告/营销卡片 ③ 精简「我的」页推广入口
- * 依赖：Loon 已开启 MITM 并信任证书，且 api.m.jd.com 已在 MITM 主机名列表。
+ * 京东首页 & 我的页 精简脚本 v2 (Loon http-response)
+ *
+ * 目标（对照截图）：
+ *   首页：关闭「为你推荐」信息流、去除顶部 banner / 营销 icon 行 / 推广楼层
+ *   我的页：精简钱包/服务/游戏等推广模块、去除签到 banner 和广告卡片
+ *
+ * 前提：Loon MITM 已开启且证书已信任。
  */
 
 (function () {
   try {
-    let body = $response.body;
+    var body = $response.body;
     if (body == null) { $done({}); return; }
-    // Loon 可能直接给字符串，也可能给已解析对象，统一转成对象
-    let obj;
+    var obj;
     if (typeof body === 'string') {
-      try { obj = JSON.parse(body); } catch (e) { $done({ body }); return; }
+      try { obj = JSON.parse(body); } catch (e) { $done({ body: body }); return; }
     } else {
       obj = body;
     }
-    if (!obj || typeof obj !== 'object') { $done({ body }); return; }
+    if (!obj || typeof obj !== 'object') { $done({ body: body }); return; }
 
     simplify(obj);
-
     $done({ body: JSON.stringify(obj) });
   } catch (e) {
     $done({});
@@ -26,75 +28,105 @@
 })();
 
 function simplify(obj) {
-  const data = obj && obj.data;
+  var data = obj && obj.data;
+  if (!data) return;
 
-  // 1) basicConfig：关闭首页推荐流聚合（猜你喜欢/为你推荐）
-  if (data && data.TNUnionFetch) {
-    const t = data.TNUnionFetch;
+  // ── 1) basicConfig 主开关 ──
+  // 关闭首页「猜你喜欢/为你推荐」推荐流聚合
+  if (data.TNUnionFetch) {
+    var t = data.TNUnionFetch;
     if (t.recommend && t.recommend.enable !== undefined) t.recommend.enable = 0;
-    // 我的页内的推荐聚合（如存在，保守关闭）
+    if (t.jdhome && t.jdhome.enable !== undefined) t.jdhome.enable = 0;
     if (t.jdmine && t.jdmine.enable !== undefined) t.jdmine.enable = 0;
   }
 
-  // 2) 关闭常见广告/营销聚合开关（basicConfig 内的模块级开关）
-  const advKeys = ['JDAD', 'JDAdsCore', 'JDUniformRecommend', 'JDWidgetManager', 'JDMarket'];
-  if (data) {
-    for (const k of advKeys) {
-      const v = data[k];
-      if (v && typeof v === 'object') {
-        for (const sk of Object.keys(v)) {
-          const sv = v[sk];
-          if (sv && typeof sv === 'object' && 'enable' in sv && sv.enable !== 0) sv.enable = 0;
-          else if (sv && typeof sv === 'object' && 'value' in sv && sv.value !== '0' && sv.value !== 0) sv.value = '0';
+  // ── 2) 广告/营销模块级开关置零 ──
+  var advKeys = ['JDAD', 'JDAdsCore', 'JDUniformRecommend', 'JDMarket',
+                  'JDWidgetManager', 'LaunchOption'];
+  for (var ai = 0; ai < advKeys.length; ai++) {
+    var mod = data[advKeys[ai]];
+    if (mod && typeof mod === 'object') {
+      for (var sk in mod) {
+        if (!mod.hasOwnProperty(sk)) continue;
+        var sv = mod[sk];
+        if (sv && typeof sv === 'object') {
+          if ('enable' in sv && sv.enable !== 0) sv.enable = 0;
+          if ('value' in sv && sv.value !== '0' && sv.value !== 0) sv.value = '0';
+          if ('switch' in sv && sv.switch !== '0') sv.switch = '0';
         }
       }
     }
   }
 
-  // 3) 通用递归：清除明确的广告/推广对象
+  // ── 3) JDMyJd 「我的」页配置降级 ──
+  if (data.JDMyJd && typeof data.JDMyJd === 'object') {
+    var mineKeys = ['recommendPreloadSwitchV15110', 'feedbackButton',
+                    'taroHomePageDegrade', 'navigationBgImage',
+                    'RecommendElderSwitchV15330', 'UDOptEnabledV1570'];
+    for (var mi = 0; mi < mineKeys.length; mi++) {
+      var mk = data.JDMyJd[mineKeys[mi]];
+      if (mk && typeof mk === 'object') {
+        if ('enable' in mk) mk.enable = 0;
+        if ('value' in mk) mk.value = '0';
+        if ('isClose' in mk) mk.isClose = '1';
+      }
+    }
+  }
+
+  // ── 4) 递归清除广告对象 ──
   stripAds(obj);
 }
 
-/* 判定一个对象是否为广告/推广 */
+/* ──── 广告判定 ──── */
 function isAdLike(o) {
   if (!o || typeof o !== 'object') return false;
 
-  // 3.1 明确的广告标识字段（正常商品不会携带）
-  const explicitAdKeys = ['adInfo', 'adExtInfo', 'adTrack', 'isAd', 'adType', 'adId', 'adCode', 'promotionInfo', 'adSource', 'advInfo', 'adMaterial', 'adWord', 'adData', 'advertInfo', 'advertisement', 'sponsorInfo', 'floatInfo', 'popupInfo', 'redPacketInfo', 'couponInfo', 'activityInfo', 'gameInfo', 'lotteryInfo'];
-  for (const k of explicitAdKeys) {
+  var explicitAdKeys = [
+    'adInfo','adExtInfo','adTrack','isAd','adType','adId','adCode',
+    'promotionInfo','adSource','advInfo','adMaterial','adWord',
+    'adData','advertInfo','advertisement','sponsorInfo',
+    'floatInfo','popupInfo','redPacketInfo','couponInfo',
+    'activityInfo','gameInfo','lotteryInfo','signInfo'
+  ];
+  for (var i = 0; i < explicitAdKeys.length; i++) {
+    var k = explicitAdKeys[i];
     if (o[k] !== undefined) {
-      if (k === 'isAd') { if (o.isAd === true || o.isAd === 1 || o.isAd === '1') return true; }
-      else if (['adType', 'adId', 'adCode', 'adSource', 'advInfo', 'adMaterial', 'adWord'].includes(k)) return true;
+      if (k === 'isAd') { if (o[k] === true || o[k] === 1 || o[k] === '1') return true; }
+      else if (['adType','adId','adCode','adSource','advInfo','adMaterial','adWord'].indexOf(k) >= 0) return true;
       else if (o[k] && typeof o[k] === 'object') return true;
       else if (typeof o[k] === 'string' && o[k].length > 0) return true;
     }
   }
 
-  // 3.2 通过模板/楼层/类型字段匹配强广告关键词，且缺乏正常商品核心字段
-  const hasProductCore = !!(o.skuId || o.wareId || o.wareInfo || o.productName || o.priceInfo || o.price || o.imageUrl || o.imgUrl || o.picUrl || o.imageList || o.materialUrl || o.skuName);
+  var hasProductCore = !!(
+    o.skuId || o.wareId || o.wareInfo || o.productName ||
+    o.priceInfo || o.price || o.imageUrl || o.imgUrl ||
+    o.picUrl || o.imageList || o.materialUrl || o.skuName
+  );
   if (!hasProductCore) {
-    const markerFields = ['templateId', 'template', 'floorId', 'type', 'style', 'subType', 'bizType', 'expParam', 'skuType', 'scene', 'modType', 'showType'];
-    const adWords = /(^|[^a-z])(ad|advert|promotion|recommend|rec|coupon|activity|act|game|lottery|lucky|float|banner|redpacket|redpack|signin|sign|popup|pop|marketing|vip|plus|adver)/i;
-    for (const f of markerFields) {
-      const v = o[f];
+    var markerFields = ['templateId','template','floorId','type','style',
+                         'subType','bizType','expParam','skuType',
+                         'scene','modType','showType','name','title'];
+    var adWords = /(^|[^a-z])(ad|advert|promotion|recommend|rec|coupon|activity|act|game|lottery|lucky|float|banner|redpacket|redpack|signin|sign|popup|pop|marketing|vip|plus|adver|每日必领|签到|领京豆|赚红包|互动游戏|刮刮乐|潮流好货)/i;
+    for (var f = 0; f < markerFields.length; f++) {
+      var v = o[markerFields[f]];
       if (typeof v === 'string' && adWords.test(v)) return true;
       if (typeof v === 'number' && adWords.test(String(v))) return true;
     }
   }
 
-  // 3.3 标记字段命中（expParam 含 ad/promotion 等）
   if (o.expParam && typeof o.expParam === 'string') {
-    const ex = o.expParam.toLowerCase();
-    if (/(^|[^a-z])(ad|advert|promotion|marketing|float|popup|redpacket)/.test(ex)) return true;
+    if (/(^|[^a-z])(ad|advert|promotion|marketing|float|popup|redpacket)/.test(o.expParam.toLowerCase())) return true;
   }
+
   return false;
 }
 
-/* 递归遍历：对数组移除广告项，对对象继续深入 */
+/* ──── 递归遍历清除 ──── */
 function stripAds(node) {
   if (Array.isArray(node)) {
-    for (let i = node.length - 1; i >= 0; i--) {
-      const item = node[i];
+    for (var i = node.length - 1; i >= 0; i--) {
+      var item = node[i];
       if (isAdLike(item)) {
         node.splice(i, 1);
       } else if (item && typeof item === 'object') {
@@ -102,8 +134,9 @@ function stripAds(node) {
       }
     }
   } else if (node && typeof node === 'object') {
-    for (const k of Object.keys(node)) {
-      const v = node[k];
+    for (var k in node) {
+      if (!node.hasOwnProperty(k)) continue;
+      var v = node[k];
       if (Array.isArray(v)) stripAds(v);
       else if (v && typeof v === 'object') stripAds(v);
     }
