@@ -1,33 +1,39 @@
 /*
- * 京东首页 & 我的页 精简脚本 v2 (Loon http-response)
+ * 京东首页 & 我的页 精简脚本 v2.3 (Loon http-response)
  *
  * 目标（对照截图）：
  *   首页：关闭「为你推荐」信息流、去除顶部 banner / 营销 icon 行 / 推广楼层
  *   我的页：精简钱包/服务/游戏等推广模块、去除签到 banner 和广告卡片
  *
  * 前提：Loon MITM 已开启且证书已信任。
+ *
+ * 诊断：脚本在「任意返回路径」都会打响应头 X-JD-Simplified: 1，
+ *      据此可在 HAR 里确认脚本是否真的执行过。
  */
+
+function doneWith(body, headers) {
+  var hdrs = ($response && $response.headers && typeof $response.headers === 'object') ? $response.headers : {};
+  hdrs['X-JD-Simplified'] = '1';
+  $done({ body: body, headers: hdrs });
+}
 
 (function () {
   try {
     var body = $response.body;
-    if (body == null) { $done({}); return; }
+    if (body == null) { doneWith($response.body); return; }
     var obj;
     if (typeof body === 'string') {
-      try { obj = JSON.parse(body); } catch (e) { $done({ body: body }); return; }
+      try { obj = JSON.parse(body); }
+      catch (e) { doneWith(body); return; }   // 解析失败也打证明头，便于区分「没跑」vs「跑了但非JSON」
     } else {
       obj = body;
     }
-    if (!obj || typeof obj !== 'object') { $done({ body: body }); return; }
+    if (!obj || typeof obj !== 'object') { doneWith(body); return; }
 
     simplify(obj);
-
-    // 执行证明：打一个响应头，方便在 HAR 里确认脚本是否真的跑过
-    var hdrs = ($response.headers && typeof $response.headers === 'object') ? $response.headers : {};
-    hdrs['X-JD-Simplified'] = '1';
-    $done({ body: JSON.stringify(obj), headers: hdrs });
+    doneWith(JSON.stringify(obj));
   } catch (e) {
-    $done({});
+    doneWith($response.body);   // 兜底：打证明头并原样返回，不破坏请求
   }
 })();
 
@@ -36,7 +42,6 @@ function simplify(obj) {
   if (!data) return;
 
   // ── 1) basicConfig 主开关 ──
-  // 关闭首页「猜你喜欢/为你推荐」推荐流聚合
   if (data.TNUnionFetch) {
     var t = data.TNUnionFetch;
     if (t.recommend && t.recommend.enable !== undefined) t.recommend.enable = 0;

@@ -1,21 +1,21 @@
 #!name=京东首页与我的页精简
 #!desc=精简京东 App 首页推荐流与「我的」页推广模块，去广告降噪
 #!author=aoconch
-#!version=2.1.0
+#!version=2.3.0
 #!support=Loon
 #!homepage=https://github.com/aoconch/jd-simplify-loon
 
-[MITM]
-hostname = %APPEND% api.m.jd.com, ccfjma.m.jd.com, ccflbs.m.jd.com, sh.jd.com
+[Mitm]
+hostname = api.m.jd.com, ccfjma.m.jd.com, ccflbs.m.jd.com, sh.jd.com
 
 [Script]
-http-response ^https?:\/\/api\.m\.jd\.com\/ script-path=https://raw.githubusercontent.com/aoconch/jd-simplify-loon/main/jd-simplify.js, requires-body=true, max-size=5120, timeout=15, tag=京东精简去广告
+http-response ^https?:\/\/api\.m\.jd\.com\/ script-path=https://raw.githubusercontent.com/aoconch/jd-simplify-loon/main/jd-simplify.js, requires-body=true, timeout=10, tag=京东精简去广告, enable=true
 
 [Rule]
-AND,https://mars.jd.com/log,REJECT
-AND,https://perf.m.jd.com/,REJECT
-AND,https://anti-sdk-report.m.jd.com/,REJECT
-AND,https://cactus.jd.com/,REJECT
-AND,https://sdkfp.jd.com/,REJECT
-AND,https://mllog.jd.com/,REJECT
-AND,https://waapdg.jd.com/,REJECT
+URL-REGEX,^https?:\/\/mars\.jd\.com\/log,REJECT
+URL-REGEX,^https?:\/\/perf\.m\.jd\.com\/,REJECT
+URL-REGEX,^https?:\/\/anti-sdk-report\.m\.jd\.com\/,REJECT
+URL-REGEX,^https?:\/\/cactus\.jd\.com\/,REJECT
+URL-REGEX,^https?:\/\/sdkfp\.jd\.com\/,REJECT
+URL-REGEX,^https?:\/\/mllog\.jd\.com\/,REJECT
+URL-REGEX,^https?:\/\/waapdg\.jd\.com\/,REJECT
