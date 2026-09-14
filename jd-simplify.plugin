@@ -9,7 +9,7 @@
 hostname = api.m.jd.com, ccfjma.m.jd.com, ccflbs.m.jd.com, sh.jd.com
 
 [Script]
-http-response ^https?:\/\/[a-zA-Z0-9.-]*\.jd\.com\/ script-path=https://raw.githubusercontent.com/aoconch/jd-simplify-loon/main/jd-simplify.js, requires-body=true, timeout=10, tag=京东精简去广告, enable=true
+http-response ^https?:\/\/[a-zA-Z0-9.-]*\.jd\.com\/ script-path=https://raw.githubusercontent.com/aoconch/jd-simplify-loon/b60a107/jd-simplify.js, requires-body=true, timeout=10, tag=京东精简去广告, enable=true
 
 [Rule]
 URL-REGEX,^https?:\/\/mars\.jd\.com\/log,REJECT
