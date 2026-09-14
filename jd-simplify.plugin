@@ -1,7 +1,7 @@
 #!name=京东首页与我的页精简
-#!desc=精简京东 App 首页推荐流与「我的」页推广模块，去广告降噪（基于 basicConfig 逆向 + 通用广告过滤）
+#!desc=精简京东 App 首页推荐流与「我的」页推广模块，去广告降噪
 #!author=aoconch
-#!version=2.0.0
+#!version=2.1.0
 #!support=Loon
 #!homepage=https://github.com/aoconch/jd-simplify-loon
 
@@ -9,10 +9,9 @@
 hostname = %APPEND% api.m.jd.com, ccfjma.m.jd.com, ccflbs.m.jd.com, sh.jd.com
 
 [Script]
-http-response ^https?:\/\/api\.m\.jd\.com\/ requires-body=true, timeout=10, tag=京东精简去广告, script-path=https://raw.githubusercontent.com/aoconch/jd-simplify-loon/main/jd-simplify.js
+http-response ^https?:\/\/api\.m\.jd\.com\/ script-path=https://cdn.jsdelivr.net/gh/aoconch/jd-simplify-loon@main/jd-simplify.js, requires-body=true, timeout=10, tag=京东精简去广告
 
 [Rule]
-# 屏蔽京东埋点/监控域名（无需 MITM 即生效）
 AND,https://mars.jd.com/log,REJECT
 AND,https://perf.m.jd.com/,REJECT
 AND,https://anti-sdk-report.m.jd.com/,REJECT
@@ -20,153 +19,3 @@ AND,https://cactus.jd.com/,REJECT
 AND,https://sdkfp.jd.com/,REJECT
 AND,https://mllog.jd.com/,REJECT
 AND,https://waapdg.jd.com/,REJECT
-
-[jd-simplify.js]
-/*
- * 京东首页 & 我的页 精简脚本 v2 (Loon http-response)
- *
- * 目标（对照截图）：
- *   首页：关闭「为你推荐」信息流、去除顶部 banner / 营销 icon 行 / 推广楼层
- *   我的页：精简钱包/服务/游戏等推广模块、去除签到 banner 和广告卡片
- *
- * 前提：Loon MITM 已开启且证书已信任。
- */
-
-(function () {
-  try {
-    var body = $response.body;
-    if (body == null) { $done({}); return; }
-    var obj;
-    if (typeof body === 'string') {
-      try { obj = JSON.parse(body); } catch (e) { $done({ body: body }); return; }
-    } else {
-      obj = body;
-    }
-    if (!obj || typeof obj !== 'object') { $done({ body: body }); return; }
-
-    simplify(obj);
-    $done({ body: JSON.stringify(obj) });
-  } catch (e) {
-    $done({});
-  }
-})();
-
-function simplify(obj) {
-  var data = obj && obj.data;
-  if (!data) return;
-
-  // ── 1) basicConfig 主开关 ──
-  // 关闭首页「猜你喜欢/为你推荐」推荐流聚合
-  if (data.TNUnionFetch) {
-    var t = data.TNUnionFetch;
-    if (t.recommend && t.recommend.enable !== undefined) t.recommend.enable = 0;
-    if (t.jdhome && t.jdhome.enable !== undefined) t.jdhome.enable = 0;
-    if (t.jdmine && t.jdmine.enable !== undefined) t.jdmine.enable = 0;
-  }
-
-  // ── 2) 广告/营销模块级开关置零 ──
-  var advKeys = ['JDAD', 'JDAdsCore', 'JDUniformRecommend', 'JDMarket',
-                  'JDWidgetManager', 'LaunchOption'];
-  for (var ai = 0; ai < advKeys.length; ai++) {
-    var mod = data[advKeys[ai]];
-    if (mod && typeof mod === 'object') {
-      for (var sk in mod) {
-        if (!mod.hasOwnProperty(sk)) continue;
-        var sv = mod[sk];
-        if (sv && typeof sv === 'object') {
-          if ('enable' in sv && sv.enable !== 0) sv.enable = 0;
-          if ('value' in sv && sv.value !== '0' && sv.value !== 0) sv.value = '0';
-          if ('switch' in sv && sv.switch !== '0') sv.switch = '0';
-        }
-      }
-    }
-  }
-
-  // ── 3) JDMyJd 「我的」页配置降级 ──
-  // 关闭签到、推广入口、活动模块等
-  if (data.JDMyJd && typeof data.JDMyJd === 'object') {
-    var mineKeys = ['recommendPreloadSwitchV15110', 'feedbackButton',
-                    'taroHomePageDegrade', 'navigationBgImage',
-                    'RecommendElderSwitchV15330', 'UDOptEnabledV1570'];
-    for (var mi = 0; mi < mineKeys.length; mi++) {
-      var mk = data.JDMyJd[mineKeys[mi]];
-      if (mk && typeof mk === 'object') {
-        if ('enable' in mk) mk.enable = 0;
-        if ('value' in mk) mk.value = '0';
-        if ('isClose' in mk) mk.isClose = '1';
-      }
-    }
-  }
-
-  // ── 4) 递归清除广告对象 ──
-  stripAds(obj);
-}
-
-/* ──── 广告判定 ──── */
-function isAdLike(o) {
-  if (!o || typeof o !== 'object') return false;
-
-  // 明确广告标识字段
-  var explicitAdKeys = [
-    'adInfo','adExtInfo','adTrack','isAd','adType','adId','adCode',
-    'promotionInfo','adSource','advInfo','adMaterial','adWord',
-    'adData','advertInfo','advertisement','sponsorInfo',
-    'floatInfo','popupInfo','redPacketInfo','couponInfo',
-    'activityInfo','gameInfo','lotteryInfo','signInfo'
-  ];
-  for (var i = 0; i < explicitAdKeys.length; i++) {
-    var k = explicitAdKeys[i];
-    if (o[k] !== undefined) {
-      if (k === 'isAd') { if (o[k] === true || o[k] === 1 || o[k] === '1') return true; }
-      else if (['adType','adId','adCode','adSource','advInfo','adMaterial','adWord'].indexOf(k) >= 0) return true;
-      else if (o[k] && typeof o[k] === 'object') return true;
-      else if (typeof o[k] === 'string' && o[k].length > 0) return true;
-    }
-  }
-
-  // 非商品核心对象 + 命中广告关键词 → 判定为广告
-  var hasProductCore = !!(
-    o.skuId || o.wareId || o.wareInfo || o.productName ||
-    o.priceInfo || o.price || o.imageUrl || o.imgUrl ||
-    o.picUrl || o.imageList || o.materialUrl || o.skuName
-  );
-  if (!hasProductCore) {
-    var markerFields = ['templateId','template','floorId','type','style',
-                         'subType','bizType','expParam','skuType',
-                         'scene','modType','showType','name','title'];
-    var adWords = /(^|[^a-z])(ad|advert|promotion|recommend|rec|coupon|activity|act|game|lottery|lucky|float|banner|redpacket|redpack|signin|sign|popup|pop|marketing|vip|plus|adver|每日必领|签到|领京豆|赚红包|互动游戏|刮刮乐|潮流好货)/i;
-    for (var f = 0; f < markerFields.length; f++) {
-      var v = o[markerFields[f]];
-      if (typeof v === 'string' && adWords.test(v)) return true;
-      if (typeof v === 'number' && adWords.test(String(v))) return true;
-    }
-  }
-
-  // expParam 含广告标记
-  if (o.expParam && typeof o.expParam === 'string') {
-    if (/(^|[^a-z])(ad|advert|promotion|marketing|float|popup|redpacket)/.test(o.expParam.toLowerCase())) return true;
-  }
-
-  return false;
-}
-
-/* ──── 递归遍历清除 ──── */
-function stripAds(node) {
-  if (Array.isArray(node)) {
-    for (var i = node.length - 1; i >= 0; i--) {
-      var item = node[i];
-      if (isAdLike(item)) {
-        node.splice(i, 1);
-      } else if (item && typeof item === 'object') {
-        stripAds(item);
-      }
-    }
-  } else if (node && typeof node === 'object') {
-    for (var k in node) {
-      if (!node.hasOwnProperty(k)) continue;
-      var v = node[k];
-      if (Array.isArray(v)) stripAds(v);
-      else if (v && typeof v === 'object') stripAds(v);
-    }
-  }
-}
