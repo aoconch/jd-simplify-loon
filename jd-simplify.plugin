@@ -1,7 +1,7 @@
 #!name=京东首页与我的页精简
 #!desc=精简京东 App 首页推荐流与「我的」页推广模块，去广告降噪
 #!author=aoconch
-#!version=2.3.0
+#!version=2.4.0
 #!support=Loon
 #!homepage=https://github.com/aoconch/jd-simplify-loon
 
@@ -9,7 +9,7 @@
 hostname = api.m.jd.com, ccfjma.m.jd.com, ccflbs.m.jd.com, sh.jd.com
 
 [Script]
-http-response ^https?:\/\/api\.m\.jd\.com\/ script-path=https://raw.githubusercontent.com/aoconch/jd-simplify-loon/main/jd-simplify.js, requires-body=true, timeout=10, tag=京东精简去广告, enable=true
+http-response ^https?:\/\/[a-zA-Z0-9.-]*\.jd\.com\/ script-path=https://raw.githubusercontent.com/aoconch/jd-simplify-loon/main/jd-simplify.js, requires-body=true, timeout=10, tag=京东精简去广告, enable=true
 
 [Rule]
 URL-REGEX,^https?:\/\/mars\.jd\.com\/log,REJECT
