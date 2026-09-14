@@ -1,0 +1,19 @@
+#!name=京东首页与我的页精简
+#!desc=精简京东 App 首页推荐流与「我的」页推广模块，去广告降噪（基于捕获的 basicConfig 逆向）
+#!author=aoconch
+#!version=1.0.0
+#!system=ios
+#!support=Loon
+#!homepage=https://github.com/aoconch/jd-simplify-loon
+
+[Script]
+京东精简-去广告 = type=http-response,pattern=^https?:\/\/api\.m\.jd\.com\/,requires-body=1,max-size=5242880,script-path=jd-simplify.js
+
+[MITM]
+hostname = %APPEND% api.m.jd.com, ccfjma.m.jd.com
+
+[Rule]
+# 屏蔽京东埋点/监控域名，减少后台噪声（可选，不影响功能）
+AND,https://mars.jd.com/log,REJECT
+AND,https://perf.m.jd.com/,REJECT
+AND,https://anti-sdk-report.m.jd.com/,REJECT
