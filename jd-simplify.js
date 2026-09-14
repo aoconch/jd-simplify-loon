@@ -60,7 +60,7 @@ function isAdLike(o) {
   if (!o || typeof o !== 'object') return false;
 
   // 3.1 明确的广告标识字段（正常商品不会携带）
-  const explicitAdKeys = ['adInfo', 'adExtInfo', 'adTrack', 'isAd', 'adType', 'adId', 'adCode', 'promotionInfo', 'adSource', 'advInfo', 'adMaterial', 'adWord'];
+  const explicitAdKeys = ['adInfo', 'adExtInfo', 'adTrack', 'isAd', 'adType', 'adId', 'adCode', 'promotionInfo', 'adSource', 'advInfo', 'adMaterial', 'adWord', 'adData', 'advertInfo', 'advertisement', 'sponsorInfo', 'floatInfo', 'popupInfo', 'redPacketInfo', 'couponInfo', 'activityInfo', 'gameInfo', 'lotteryInfo'];
   for (const k of explicitAdKeys) {
     if (o[k] !== undefined) {
       if (k === 'isAd') { if (o.isAd === true || o.isAd === 1 || o.isAd === '1') return true; }
