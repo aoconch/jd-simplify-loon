@@ -21,7 +21,11 @@
     if (!obj || typeof obj !== 'object') { $done({ body: body }); return; }
 
     simplify(obj);
-    $done({ body: JSON.stringify(obj) });
+
+    // 执行证明：打一个响应头，方便在 HAR 里确认脚本是否真的跑过
+    var hdrs = ($response.headers && typeof $response.headers === 'object') ? $response.headers : {};
+    hdrs['X-JD-Simplified'] = '1';
+    $done({ body: JSON.stringify(obj), headers: hdrs });
   } catch (e) {
     $done({});
   }
