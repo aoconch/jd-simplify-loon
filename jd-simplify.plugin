@@ -7,7 +7,7 @@
 #!homepage=https://github.com/aoconch/jd-simplify-loon
 
 [Script]
-京东精简-去广告 = type=http-response,pattern=^https?:\/\/api\.m\.jd\.com\/,requires-body=1,max-size=5242880,script-path=jd-simplify.js
+京东精简-去广告 = type=http-response,pattern=^https?:\/\/api\.m\.jd\.com\/,requires-body=1,max-size=5242880,script-url=https://raw.githubusercontent.com/aoconch/jd-simplify-loon/main/jd-simplify.js
 
 [MITM]
 hostname = %APPEND% api.m.jd.com, ccfjma.m.jd.com
