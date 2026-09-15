@@ -1,4 +1,4 @@
-// 京东首页/我的页精简 · Loon http-response 脚本 v3.0
+// 京东首页/我的页精简 · Loon http-response 脚本 v3.1
 //
 // 关键认知（经多份抓包验证）：
 //  - 京东首页是一个 React H5 网页（host=pro.m.jd.com），推荐流"猜你喜欢"在网页内
@@ -87,9 +87,47 @@ function neutralize() {
   try {
     // 吞掉注入可能引发的任何报错，绝不拖垮页面
     window.onerror = function () { return true; };
+    try { window.__JD_SIMPLIFY__ = 'v3.1'; } catch (e) {}
 
-    // (1) 让推荐流 JSONP 回调失效：页面 later 会给 window.getRecommendPageSourceCallback
-    //     赋值真实函数，我们用不可配置的属性把它锁成空函数，feed 永不渲染。
+    // (1) 源头掐断原生桥推荐调用：w() -> window.XWebView.callNative(bridge, method, ...)
+    //     JD 推荐数据经 callNative('JDURecommendH5Bridge','getRecommendPageSource',...)
+    //     仅拦截含 Recommend 的桥/方法，其他原生调用照常放行（不破坏页面）。
+    function isRecommendCall() {
+      for (var k = 0; k < arguments.length; k++) {
+        if (typeof arguments[k] === 'string' && arguments[k].indexOf('Recommend') >= 0) return true;
+      }
+      return false;
+    }
+    try {
+      if (!('XWebView' in window)) {
+        var _xw = null;
+        Object.defineProperty(window, 'XWebView', {
+          configurable: false,
+          enumerable: true,
+          get: function () { return _xw; },
+          set: function (v) {
+            try {
+              if (v && typeof v.callNative === 'function') {
+                var _cn = v.callNative;
+                v.callNative = function () {
+                  if (isRecommendCall.apply(null, arguments)) return;
+                  return _cn.apply(this, arguments);
+                };
+              }
+            } catch (e) {}
+            _xw = v;
+          }
+        });
+      } else if (window.XWebView && typeof window.XWebView.callNative === 'function') {
+        var _cn2 = window.XWebView.callNative;
+        window.XWebView.callNative = function () {
+          if (isRecommendCall.apply(null, arguments)) return;
+          return _cn2.apply(this, arguments);
+        };
+      }
+    } catch (e) {}
+
+    // (2) 兜底：锁死推荐回调本身，原生若经此回调下发也直接空处理
     try {
       var KEY = 'getRecommendPageSourceCallback';
       if (!(KEY in window)) {
@@ -102,12 +140,12 @@ function neutralize() {
       }
     } catch (e) {}
 
-    // (2) 内容感知隐藏：扫描含推荐/营销关键词的文本叶子节点，上溯到楼层容器并隐藏。
+    // (3) 内容感知隐藏（保守：仅当命中楼层容器类或父级时才隐藏）
     function jdHide() {
       try {
-        var kws = ['猜你喜欢', '为你推荐', '热门推荐', '猜你喜欢', '发现好货',
-                   '今日推荐', '更多推荐', '看了又看', '回购榜', '排行榜',
-                   '逛京东', '大促', '百亿补贴', '新人专享', '限时秒杀'];
+        var kws = ['猜你喜欢', '为你推荐', '热门推荐', '发现好货', '今日推荐',
+                   '更多推荐', '看了又看', '回购榜', '排行榜', '逛京东',
+                   '大促', '百亿补贴', '新人专享', '限时秒杀', '精选好物'];
         var els = document.getElementsByTagName('*');
         for (var i = 0; i < els.length; i++) {
           var el = els[i];
@@ -115,26 +153,22 @@ function neutralize() {
           var t = (el.textContent || '').trim();
           if (t.length === 0 || t.length > 24) continue;
           var hit = false;
-          for (var j = 0; j < kws.length; j++) {
-            if (t.indexOf(kws[j]) >= 0) { hit = true; break; }
-          }
+          for (var j = 0; j < kws.length; j++) { if (t.indexOf(kws[j]) >= 0) { hit = true; break; } }
           if (!hit) continue;
-          // 上溯到楼层容器（class 含 floor/recommend/feed/active/mod，或高度>300）
           var p = el, depth = 0, hidden = false;
-          while (p && depth < 10) {
+          while (p && depth < 8) {
             var cls = (p.className || '').toString().toLowerCase();
             if (cls.indexOf('floor') >= 0 || cls.indexOf('recommend') >= 0 ||
                 cls.indexOf('feed') >= 0 || cls.indexOf('active') >= 0 ||
-                cls.indexOf('mod') >= 0 || p.offsetHeight > 300) {
+                cls.indexOf('mod') >= 0 || cls.indexOf('card') >= 0 ||
+                cls.indexOf('sku') >= 0 || cls.indexOf('item') >= 0) {
               if (p.style) p.style.setProperty('display', 'none', 'important');
-              hidden = true;
-              break;
+              hidden = true; break;
             }
-            p = p.parentElement;
-            depth++;
+            p = p.parentElement; depth++;
           }
-          if (!hidden && p && p.style) {
-            p.style.setProperty('display', 'none', 'important');
+          if (!hidden && el.parentElement && el.parentElement.style) {
+            el.parentElement.style.setProperty('display', 'none', 'important');
           }
         }
       } catch (e) {}
