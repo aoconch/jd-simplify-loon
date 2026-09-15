@@ -15,7 +15,7 @@
 ### 安装链接
 
 ```
-https://cdn.jsdelivr.net/gh/aoconch/jd-simplify-loon@__DEBUG_SHA__/jd-debug-mitm.plugin
+https://cdn.jsdelivr.net/gh/aoconch/jd-simplify-loon@8b77d046b38d4850031c9de5cdc3eaf5a331b65d/jd-debug-mitm.plugin
 ```
 
 这个插件**只有 `[Mitm]` 段，一行脚本都没有**，所以不存在 `script-path` 下载失败的问题 —— 之前那个「资源异常 / Request failed: not found (404)」正是旧版诊断插件里脚本 URL 的 SHA 写错导致的，该版本已删掉。
