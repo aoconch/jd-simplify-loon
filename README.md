@@ -76,6 +76,9 @@ https://cdn.jsdelivr.net/gh/aoconch/jd-simplify-loon@641770c895f6bf8c3c1d18bb97a
 | `jd-simplify.plugin` | Loon 插件清单主版（`[Script]` 重写 + `[Mitm]` + `[Rule]` 拦截，脚本走 raw.githubusercontent.com） |
 | `jd-simplify-jsdelivr.plugin` | 同上，仅 `script-path` 换成 jsDelivr CDN；raw 拉不动时用 |
 | `jd-simplify.js` | http-response 重写脚本：打坏楼层 JS 包 URL + 注入兜底 + JSON 广告清理 |
+| `jd-debug-mitm.plugin` | 抓包诊断版：**纯 `[Mitm]`、零脚本**，只为把接口以明文暴露在 HAR 里。用完请删 |
+| `CAPTURE.md` | 抓包指引（含「购物车 / 消息页」专项步骤） |
+| `tools/` | HAR 分析脚本（`har.py` 公共库 + overview / timeline / api_list / probe） |
 | `README.md` | 本说明 |
 
 ## 自定义

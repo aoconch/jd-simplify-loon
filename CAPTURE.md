@@ -10,13 +10,24 @@
 
 > 正式版 `jd-simplify.plugin` 先**关掉或删除**，两个不要同时开（诊断版会放大 MITM 范围）。
 
-诊断版作用：把 MITM 覆盖从 5 个域名扩到 15 个（含 `m.jd.com` / `h5.m.jd.com` / `item.m.jd.com` / `storage.360buyimg.com` 等），并给每个被解密的响应打上 `X-JD-Debug: 1` 头。**它不做任何拦截和改写**，纯粹用来看清请求内容。
+诊断版的唯一作用：把 MITM 覆盖从 5 个域名扩到**整个 `*.jd.com`**（外加 `storage` / `apk.360buyimg.com` 两个资源 CDN），这样购物车和消息页的接口才会以明文出现在 HAR 里。**它不做任何拦截和改写。**
 
-安装链接（固定 commit，避免 CDN 缓存）：
+### 安装链接
 
 ```
-https://cdn.jsdelivr.net/gh/aoconch/jd-simplify-loon@6557494743e37eb4987b3f440fb096471b4abbae/jd-debug.plugin
+https://cdn.jsdelivr.net/gh/aoconch/jd-simplify-loon@__DEBUG_SHA__/jd-debug-mitm.plugin
 ```
+
+这个插件**只有 `[Mitm]` 段，一行脚本都没有**，所以不存在 `script-path` 下载失败的问题 —— 之前那个「资源异常 / Request failed: not found (404)」正是旧版诊断插件里脚本 URL 的 SHA 写错导致的，该版本已删掉。
+
+备选 CDN（若上面的域名拉不动，把 `cdn.jsdelivr.net` 换成其一）：
+
+- `gcore.jsdelivr.net`
+- `fastly.jsdelivr.net`
+
+### 代价
+
+没有响应头标记，我判断「哪些请求被解密了」只能靠 HAR 里响应体是否为明文。够用。
 
 ## 第二步：按这个顺序操作
 
@@ -39,7 +50,7 @@ https://cdn.jsdelivr.net/gh/aoconch/jd-simplify-loon@6557494743e37eb4987b3f440fb
 
 ## 我会拿它做什么
 
-- 搜 `X-JD-Debug` 确认哪些域名真正被解密（没解密的我看不到内容，需要再加 MITM）。
+- 先看哪些域名被真正解密了（响应体是明文）。没解密的我看不到内容，需要再补 MITM 域名。
 - 按时间线切出「购物车段」和「消息页段」，把这两段里**所有带内容的请求**列出来，逐个看响应体里有没有 `推荐榜单` / `快点来看看` / `guessYouLike` / `recommend` 之类的字段。
 - 定位到具体 `functionId` 或 URL 后，写成精准的改写规则或 REJECT 规则，再发你一版正式插件。
 

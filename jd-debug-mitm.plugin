@@ -1,0 +1,11 @@
+#!name=京东精简·抓包诊断版(无脚本)
+#!desc=仅供定位接口用：纯 MITM 配置，不加载任何远程脚本（不会有"资源异常/下载失败"）。诊断完请删除本插件，装回正式版
+#!author=aoconch
+#!version=1.0.1
+#!support=Loon
+#!homepage=https://github.com/aoconch/jd-simplify-loon
+
+[Mitm]
+# 通配整个 jd.com，把购物车 / 消息页用到的接口域名一次全盖住（诊断阶段临时放大 MITM 范围）
+# 360buyimg 只开两个资源 CDN；不开 m.360buyimg.com（那是十几 MB 商品图，解开会明显拖慢）
+hostname = *.jd.com, storage.360buyimg.com, apk.360buyimg.com
