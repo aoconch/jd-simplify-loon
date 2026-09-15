@@ -33,7 +33,7 @@ v3.x 一直在钩原生桥 `getRecommendPageSourceCallback`，以为它是推荐
 > `raw.githubusercontent.com` 的 `main` 分支有 CDN 缓存延迟，务必用**固定到具体 commit 的 URL**：
 
 ```
-https://raw.githubusercontent.com/aoconch/jd-simplify-loon/571992a2733ece5e69016dedeac734f14c5c57e3/jd-simplify.plugin
+https://raw.githubusercontent.com/aoconch/jd-simplify-loon/cac0a6f4a6f0c0d7ceafd103019697e261fe4f85/jd-simplify.plugin
 ```
 
 1. Loon → **插件** → **添加**（或「+」）→ 选「通过 URL 添加」，填入上面的链接。
@@ -42,7 +42,7 @@ https://raw.githubusercontent.com/aoconch/jd-simplify-loon/571992a2733ece5e69016
 4. **彻底杀掉京东 App 再重开**（一定要冷启动，热启动会复用已加载的页面）。
 
 > 若 `raw.githubusercontent.com` 拉取慢，可换成 jsDelivr 同一 commit：
-> `https://cdn.jsdelivr.net/gh/aoconch/jd-simplify-loon@571992a2733ece5e69016dedeac734f14c5c57e3/jd-simplify.plugin`
+> `https://cdn.jsdelivr.net/gh/aoconch/jd-simplify-loon@cac0a6f4a6f0c0d7ceafd103019697e261fe4f85/jd-simplify.plugin`
 
 ## 如何确认生效
 
