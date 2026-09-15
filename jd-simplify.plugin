@@ -1,7 +1,7 @@
 #!name=京东首页与我的页精简
-#!desc=精简京东 App 首页推荐流与「我的」页推广模块，去广告降噪（含首页 H5 网页去推荐）
+#!desc=v4.0 网络层硬拦截：掐断首页自定义楼层 JS 包、二楼/浏览历史/弹窗接口与全部埋点广告域名
 #!author=aoconch
-#!version=3.2.1
+#!version=4.0.0
 #!support=Loon
 #!homepage=https://github.com/aoconch/jd-simplify-loon
 
@@ -9,13 +9,30 @@
 hostname = api.m.jd.com, ccfjma.m.jd.com, ccflbs.m.jd.com, sh.jd.com, pro.m.jd.com
 
 [Script]
-http-response ^https?:\/\/[a-zA-Z0-9.-]*\.jd\.com\/ script-path=https://raw.githubusercontent.com/aoconch/jd-simplify-loon/bed21a087de1747c0b330f07fccf12d607aee8aa/jd-simplify.js, requires-body=true, timeout=10, tag=京东精简去广告, enable=true
+http-response ^https?:\/\/[a-zA-Z0-9.-]*\.jd\.com\/ script-path=https://raw.githubusercontent.com/aoconch/jd-simplify-loon/331e180e381adee2b898d0c1c339cb722ee83fe2/jd-simplify.js, requires-body=true, timeout=10, tag=京东精简去广告, enable=true
 
 [Rule]
-URL-REGEX,^https?:\/\/mars\.jd\.com\/log,REJECT
-URL-REGEX,^https?:\/\/perf\.m\.jd\.com\/,REJECT
-URL-REGEX,^https?:\/\/anti-sdk-report\.m\.jd\.com\/,REJECT
-URL-REGEX,^https?:\/\/cactus\.jd\.com\/,REJECT
-URL-REGEX,^https?:\/\/sdkfp\.jd\.com\/,REJECT
-URL-REGEX,^https?:\/\/mllog\.jd\.com\/,REJECT
-URL-REGEX,^https?:\/\/waapdg\.jd\.com\/,REJECT
+# ---- 内容类：首页自定义楼层（二楼 / 浏览历史 / 为你推荐）----
+URL-REGEX,^https?:\/\/api\.m\.jd\.com\/client\.action\?.*functionId=secondFloor,REJECT
+URL-REGEX,^https?:\/\/api\.m\.jd\.com\/client\.action\?.*functionId=SecFloorBrowseHistory,REJECT
+# ---- 首页弹窗 / 引导气泡 / 升级提示 ----
+URL-REGEX,^https?:\/\/api\.m\.jd\.com\/client\.action\?.*functionId=queryPagePopWindow,REJECT
+URL-REGEX,^https?:\/\/api\.m\.jd\.com\/client\.action\?.*functionId=babelGetGuideTips,REJECT
+URL-REGEX,^https?:\/\/api\.m\.jd\.com\/api\/appPublishUpgrade,REJECT
+# ---- 埋点 / 广告统计 / 反作弊上报（主机级，无需 MITM）----
+DOMAIN-SUFFIX,mars.jd.com,REJECT
+DOMAIN-SUFFIX,sh.jd.com,REJECT
+DOMAIN-SUFFIX,mllog.jd.com,REJECT
+DOMAIN-SUFFIX,uranus.jd.com,REJECT
+DOMAIN-SUFFIX,cactus.jd.com,REJECT
+DOMAIN-SUFFIX,dsap.jd.com,REJECT
+DOMAIN-SUFFIX,jra.jd.com,REJECT
+DOMAIN-SUFFIX,ex.m.jd.com,REJECT
+DOMAIN-SUFFIX,h5speed.m.jd.com,REJECT
+DOMAIN-SUFFIX,im-x.jd.com,REJECT
+DOMAIN-SUFFIX,blackhole.m.jd.com,REJECT
+DOMAIN-SUFFIX,perf.m.jd.com,REJECT
+DOMAIN-SUFFIX,anti-sdk-report.m.jd.com,REJECT
+DOMAIN-SUFFIX,waapdg.jd.com,REJECT
+DOMAIN-SUFFIX,sdkfp.jd.com,REJECT
+DOMAIN-SUFFIX,consumer.fcbox.com,REJECT
