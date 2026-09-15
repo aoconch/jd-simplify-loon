@@ -1,4 +1,4 @@
-// 京东首页/我的页精简 · Loon http-response 脚本 v3.2
+// 京东首页/我的页精简 · Loon http-response 脚本 v3.2.1
 //
 // 关键认知（经多份抓包验证）：
 //  - 京东首页是一个 React H5 网页（host=pro.m.jd.com），推荐流"猜你喜欢"在网页内
@@ -87,28 +87,51 @@ function neutralize() {
   try {
     // 吞掉注入可能引发的任何报错，绝不拖垮页面
     window.onerror = function () { return true; };
-    try { window.__JD_SIMPLIFY__ = 'v3.2'; } catch (e) {}
+    try { window.__JD_SIMPLIFY__ = 'v3.2.1'; } catch (e) {}
 
-    // 把某个 window 回调锁成空函数：无论页面何时赋值都生效（关键修复点）。
-    // 旧的 v3.0/3.1 用 if(!(KEY in window)) 守卫，若页面先赋值则锁被跳过 -> 回调照常工作 -> feed 照常渲染。
-    function lockCallback(name) {
+    // 锁死 window 上的某个原生回调：无条件安装（关键修复点）。
+    // 旧的 v3.0/3.1 用 if(!(KEY in window)) 守卫，若页面先赋值则锁被跳过
+    // -> 回调照常工作 -> feed 照常渲染，这正是"注入成功却毫无效果"的根因。
+    //
+    // 不是简单替换成 noop：那样页面的 Promise 会永久挂起（页面可能卡在 loading）。
+    // 正确做法是"吞掉真实数据、改喂一份空数据"：真实回调收到 status=0 但
+    // data 为空 -> 页面自身逻辑 resolve 成空串 -> feed 不渲染且页面正常继续。
+    function lockCallback(name, emptyPayload) {
+      var real = null;
+      var fed = false;
+      function feedEmpty() {
+        if (fed) return;
+        if (typeof real !== 'function') { return; }
+        fed = true;
+        try { real(emptyPayload); } catch (e) {}
+      }
+      var stub = function () { feedEmpty(); };
       try {
+        // 若页面已先赋值，先把真实函数抢下来，稍后喂空数据
+        try { if (typeof window[name] === 'function') { real = window[name]; } } catch (e) {}
         Object.defineProperty(window, name, {
           configurable: false,
           enumerable: true,
-          get: function () { return function () {}; },
-          set: function () {}
+          get: function () { return stub; },
+          set: function (v) {
+            real = v;
+            // 异步喂空：让 Promise executor 先跑完（避免同步重入）
+            try { setTimeout(feedEmpty, 0); } catch (e) { feedEmpty(); }
+          }
         });
       } catch (e) {
-        try { window[name] = function () {}; } catch (e2) {}
+        try { window[name] = stub; } catch (e2) {}
       }
+      // 兜底：若 setter 一直没被触发（页面在 defineProperty 之前已赋值且我们已抓取 real）
+      try { setTimeout(feedEmpty, 50); setTimeout(feedEmpty, 800); } catch (e) {}
+      return feedEmpty;
     }
 
     // (1) 锁死推荐回调：页面用 window.getRecommendPageSourceCallback = 真实函数 注册，
     //     原生层 (JDURecommendH5Bridge.getRecommendPageSource) 拿到数据后回调它，
-    //     再把 pageSource 喂给 nativeContainerAid。锁成空函数后原生回调被吞掉，
-    //     Promise 经 setTimeout 兜底解析为空 -> 推荐不渲染。无条件安装。
-    lockCallback('getRecommendPageSourceCallback');
+    //     再把 pageSource 喂给 nativeContainerAid 决定是否渲染 feed。
+    //     data 为空 -> 页面自身解析为 "" -> 推荐不渲染。
+    lockCallback('getRecommendPageSourceCallback', '{"status":"0","data":{}}');
 
     // (2) 冗余：从源头拦截原生桥 callNative（若 XWebView 可写）。
     //     凡是推荐/feed 相关调用一律拦截；其他原生调用照常放行（不破坏页面）。
