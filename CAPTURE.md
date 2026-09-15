@@ -15,7 +15,7 @@
 安装链接（固定 commit，避免 CDN 缓存）：
 
 ```
-https://cdn.jsdelivr.net/gh/aoconch/jd-simplify-loon@PLACEHOLDER/jd-debug.plugin
+https://cdn.jsdelivr.net/gh/aoconch/jd-simplify-loon@6557494743e37eb4987b3f440fb096471b4abbae/jd-debug.plugin
 ```
 
 ## 第二步：按这个顺序操作
