@@ -6,10 +6,10 @@
 
 - **京东首页是一个 React 写的 H5 网页（host = `pro.m.jd.com`），不是原生接口渲染。** 推荐流"猜你喜欢"在网页内部通过 JSONP 回调 `getRecommendPageSourceCallback` 动态加载，数据根本不走 `api.m.jd.com` 的 JSON 接口。早期多轮"脚本在跑却没效果"的根因正是：脚本只改了 JSON 接口，对网页内容毫无作用。
 - **`basicConfig` 响应约 345KB，超出 Loon `requires-body` 内部体积上限**，Loon 不会把它的 body 交给脚本，因此无法靠改写 `basicConfig` 开关来精简。
-- **v3.0→v3.1 的应对**：把 `pro.m.jd.com` 加入 `[Mitm]`，并对首页网页 HTML 注入脚本：
-  1. **从源头掐断原生桥**：网页源码为 `function w(...){ window.XWebView.callNative(e,n,a,t,i) }`，推荐数据经 `window.XWebView.callNative("JDURecommendH5Bridge","getRecommendPageSource",...)` 由原生层下发。v3.1 通过劫持 `window.XWebView` 的赋值、改写其 `callNative`，凡参数含 `Recommend` 的桥调用一律拦截，其余原生调用照常委托（不破坏页面）。
-  2. **锁死推荐流回调（兜底）**：`Object.defineProperty` 把 `getRecommendPageSourceCallback` 锁成空函数；
-  3. **内容感知隐藏（兜底）**：`MutationObserver` + 关键词（猜你喜欢/为你推荐/百亿补贴…）扫描楼层容器 `display:none`，滚动加载持续生效；
+- **v3.0→v3.2 的应对**：把 `pro.m.jd.com` 加入 `[Mitm]`，并对首页网页 HTML 注入脚本：
+  1. **锁死推荐回调（核心，v3.2 修复）**：网页以 `window.getRecommendPageSourceCallback = function(e){...}` 注册回调，原生层经 `JDURecommendH5Bridge.getRecommendPageSource` 拿到数据后回调它，再把 `pageSource` 喂给 `nativeContainerAid` 驱动首页推荐容器。**v3.2 用无条件 `Object.defineProperty` 把该回调锁成空函数**（关键修复：v3.0/3.1 因 `if(!(KEY in window))` 守卫，页面先赋值时锁被跳过 → 回调照常工作 → feed 照常渲染）。锁死后原生回传被吞掉，`nativeContainerAid` 经兜底 timeout 解析为空 → 推荐不渲染。
+  2. **从源头劫持原生桥（冗余）**：网页用 `function w(...){ window.XWebView.callNative(e,n,a,t,i) }` 调原生。`XWebView` 多半是原生 App 注入的只读对象，此步常静默失效，仅作冗余——凡参数含 `Recommend/Feed/Guess` 的桥调用一律拦截。
+  3. **内容感知隐藏（兜底）**：`MutationObserver` + 关键词（猜你喜欢/为你推荐/百亿补贴…）扫描楼层容器 `display:none`，滚动加载持续生效。
   4. **JSON 接口分支（我的页 / 小接口）**：命中 `uniformRecommend`/`guessYouLike`/`recommend*` 直接返回空数据；`secondFloor` 移除 `recommendFloor`；所有可处理接口递归清理广告字段。
 - 后台埋点（`mars.jd.com/log`、`perf.m.jd.com` 等）通过 `[Rule]` 直接 REJECT，**不需要 MITM 即生效**。
 
@@ -18,7 +18,7 @@
 > `raw.githubusercontent.com` 的 `main` 分支有 CDN 缓存延迟，务必用**固定到具体 commit 的 URL**，确保拉到的是最新脚本：
 
 ```
-https://raw.githubusercontent.com/aoconch/jd-simplify-loon/7c72c35f3a85a637633f20ecdaf99ce4ec9c958b/jd-simplify.plugin
+https://raw.githubusercontent.com/aoconch/jd-simplify-loon/775e530dcd83954642829bb9bb60dee9c2898278/jd-simplify.plugin
 ```
 
 1. Loon → **插件** → **添加**（或「+」）→ 选「通过 URL 添加」，填入上面的链接。
