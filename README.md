@@ -30,19 +30,30 @@ v3.x 一直在钩原生桥 `getRecommendPageSourceCallback`，以为它是推荐
 
 ## 安装（通过 GitHub 添加）
 
-> `raw.githubusercontent.com` 的 `main` 分支有 CDN 缓存延迟，务必用**固定到具体 commit 的 URL**：
+> `raw.githubusercontent.com` 与 `main` 分支都有 CDN 缓存延迟，务必用**固定到具体 commit 的 URL**。
+
+### 方案 A：主版（脚本走 raw.githubusercontent.com）
 
 ```
 https://raw.githubusercontent.com/aoconch/jd-simplify-loon/cac0a6f4a6f0c0d7ceafd103019697e261fe4f85/jd-simplify.plugin
 ```
 
+### 方案 B：jsDelivr 版（脚本走 cdn.jsdelivr.net）
+
+若你的网络访问 `raw.githubusercontent.com` 很慢或超时（插件能装上但 Loon 提示「脚本下载失败」），改用这一版——**插件清单和 JS 脚本都走 jsDelivr**：
+
+```
+https://cdn.jsdelivr.net/gh/aoconch/jd-simplify-loon@be6aee54ef36fd71dcd926bbb4bb71629b620068/jd-simplify-jsdelivr.plugin
+```
+
+> 两个版本的 `[Rule]` 拦截规则完全一致，只有 `script-path` 的域名不同，**装一个即可，不要同时装**。
+
+### 安装后必做
+
 1. Loon → **插件** → **添加**（或「+」）→ 选「通过 URL 添加」，填入上面的链接。
 2. 确认安装并**开启 MITM**（Loon 会提示为 `api.m.jd.com`、`pro.m.jd.com` 等开启证书信任）。
 3. iOS 证书两步信任：`设置 → 通用 → VPN与设备管理` 信任 `Loon Certificate`；再进 `设置 → 关于本机 → 证书信任设置` 打开 Loon 根证书开关。
 4. **彻底杀掉京东 App 再重开**（一定要冷启动，热启动会复用已加载的页面）。
-
-> 若 `raw.githubusercontent.com` 拉取慢，可换成 jsDelivr 同一 commit：
-> `https://cdn.jsdelivr.net/gh/aoconch/jd-simplify-loon@cac0a6f4a6f0c0d7ceafd103019697e261fe4f85/jd-simplify.plugin`
 
 ## 如何确认生效
 
@@ -62,7 +73,8 @@ https://raw.githubusercontent.com/aoconch/jd-simplify-loon/cac0a6f4a6f0c0d7ceafd
 
 | 文件 | 作用 |
 | --- | --- |
-| `jd-simplify.plugin` | Loon 插件清单（`[Script]` 重写 + `[Mitm]` + `[Rule]` 拦截） |
+| `jd-simplify.plugin` | Loon 插件清单主版（`[Script]` 重写 + `[Mitm]` + `[Rule]` 拦截，脚本走 raw.githubusercontent.com） |
+| `jd-simplify-jsdelivr.plugin` | 同上，仅 `script-path` 换成 jsDelivr CDN；raw 拉不动时用 |
 | `jd-simplify.js` | http-response 重写脚本：打坏楼层 JS 包 URL + 注入兜底 + JSON 广告清理 |
 | `README.md` | 本说明 |
 
