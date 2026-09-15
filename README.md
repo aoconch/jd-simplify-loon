@@ -43,7 +43,7 @@ https://raw.githubusercontent.com/aoconch/jd-simplify-loon/cac0a6f4a6f0c0d7ceafd
 若你的网络访问 `raw.githubusercontent.com` 很慢或超时（插件能装上但 Loon 提示「脚本下载失败」），改用这一版——**插件清单和 JS 脚本都走 jsDelivr**：
 
 ```
-https://cdn.jsdelivr.net/gh/aoconch/jd-simplify-loon@be6aee54ef36fd71dcd926bbb4bb71629b620068/jd-simplify-jsdelivr.plugin
+https://cdn.jsdelivr.net/gh/aoconch/jd-simplify-loon@641770c895f6bf8c3c1d18bb97a8f5b5b8cf41be/jd-simplify-jsdelivr.plugin
 ```
 
 > 两个版本的 `[Rule]` 拦截规则完全一致，只有 `script-path` 的域名不同，**装一个即可，不要同时装**。
