@@ -1,4 +1,4 @@
-// 京东首页/我的页精简 · Loon http-response 脚本 v3.1
+// 京东首页/我的页精简 · Loon http-response 脚本 v3.2
 //
 // 关键认知（经多份抓包验证）：
 //  - 京东首页是一个 React H5 网页（host=pro.m.jd.com），推荐流"猜你喜欢"在网页内
@@ -87,65 +87,79 @@ function neutralize() {
   try {
     // 吞掉注入可能引发的任何报错，绝不拖垮页面
     window.onerror = function () { return true; };
-    try { window.__JD_SIMPLIFY__ = 'v3.1'; } catch (e) {}
+    try { window.__JD_SIMPLIFY__ = 'v3.2'; } catch (e) {}
 
-    // (1) 源头掐断原生桥推荐调用：w() -> window.XWebView.callNative(bridge, method, ...)
-    //     JD 推荐数据经 callNative('JDURecommendH5Bridge','getRecommendPageSource',...)
-    //     仅拦截含 Recommend 的桥/方法，其他原生调用照常放行（不破坏页面）。
-    function isRecommendCall() {
-      for (var k = 0; k < arguments.length; k++) {
-        if (typeof arguments[k] === 'string' && arguments[k].indexOf('Recommend') >= 0) return true;
+    // 把某个 window 回调锁成空函数：无论页面何时赋值都生效（关键修复点）。
+    // 旧的 v3.0/3.1 用 if(!(KEY in window)) 守卫，若页面先赋值则锁被跳过 -> 回调照常工作 -> feed 照常渲染。
+    function lockCallback(name) {
+      try {
+        Object.defineProperty(window, name, {
+          configurable: false,
+          enumerable: true,
+          get: function () { return function () {}; },
+          set: function () {}
+        });
+      } catch (e) {
+        try { window[name] = function () {}; } catch (e2) {}
       }
+    }
+
+    // (1) 锁死推荐回调：页面用 window.getRecommendPageSourceCallback = 真实函数 注册，
+    //     原生层 (JDURecommendH5Bridge.getRecommendPageSource) 拿到数据后回调它，
+    //     再把 pageSource 喂给 nativeContainerAid。锁成空函数后原生回调被吞掉，
+    //     Promise 经 setTimeout 兜底解析为空 -> 推荐不渲染。无条件安装。
+    lockCallback('getRecommendPageSourceCallback');
+
+    // (2) 冗余：从源头拦截原生桥 callNative（若 XWebView 可写）。
+    //     凡是推荐/feed 相关调用一律拦截；其他原生调用照常放行（不破坏页面）。
+    //     XWebView 多半是原生 App 注入的只读对象，此步可能静默失效，故仅作冗余。
+    function isFeedCall() {
+      for (var k = 0; k < arguments.length; k++) {
+        if (typeof arguments[k] === 'string') {
+          var s = arguments[k];
+          if (s.indexOf('Recommend') >= 0 || s.indexOf('recommend') >= 0 ||
+              s.indexOf('Feed') >= 0 || s.indexOf('feed') >= 0 ||
+              s.indexOf('Guess') >= 0 || s.indexOf('guess') >= 0) return true;
+        }
+      }
+      return false;
+    }
+    function hookCallNative(xw) {
+      try {
+        if (xw && typeof xw.callNative === 'function') {
+          var _cn = xw.callNative;
+          xw.callNative = function () {
+            if (isFeedCall.apply(null, arguments)) return;
+            return _cn.apply(this, arguments);
+          };
+          return true;
+        }
+      } catch (e) {}
       return false;
     }
     try {
       if (!('XWebView' in window)) {
         var _xw = null;
         Object.defineProperty(window, 'XWebView', {
-          configurable: false,
+          configurable: true,
           enumerable: true,
           get: function () { return _xw; },
-          set: function (v) {
-            try {
-              if (v && typeof v.callNative === 'function') {
-                var _cn = v.callNative;
-                v.callNative = function () {
-                  if (isRecommendCall.apply(null, arguments)) return;
-                  return _cn.apply(this, arguments);
-                };
-              }
-            } catch (e) {}
-            _xw = v;
-          }
+          set: function (v) { try { hookCallNative(v); } catch (e) {} _xw = v; }
         });
-      } else if (window.XWebView && typeof window.XWebView.callNative === 'function') {
-        var _cn2 = window.XWebView.callNative;
-        window.XWebView.callNative = function () {
-          if (isRecommendCall.apply(null, arguments)) return;
-          return _cn2.apply(this, arguments);
-        };
+      } else {
+        hookCallNative(window.XWebView);
       }
     } catch (e) {}
 
-    // (2) 兜底：锁死推荐回调本身，原生若经此回调下发也直接空处理
-    try {
-      var KEY = 'getRecommendPageSourceCallback';
-      if (!(KEY in window)) {
-        Object.defineProperty(window, KEY, {
-          configurable: false,
-          enumerable: true,
-          get: function () { return function () {}; },
-          set: function () {}
-        });
-      }
-    } catch (e) {}
-
-    // (3) 内容感知隐藏（保守：仅当命中楼层容器类或父级时才隐藏）
+    // (3) 内容感知隐藏（兜底）：扫描含推荐关键词的叶子文本，上溯隐藏楼层容器。
     function jdHide() {
       try {
         var kws = ['猜你喜欢', '为你推荐', '热门推荐', '发现好货', '今日推荐',
                    '更多推荐', '看了又看', '回购榜', '排行榜', '逛京东',
-                   '大促', '百亿补贴', '新人专享', '限时秒杀', '精选好物'];
+                   '大促', '百亿补贴', '新人专享', '限时秒杀', '精选好物',
+                   '猜你喜欢', '好物精选', '个性推荐'];
+        var clsKw = ['floor','recommend','feed','active','mod','card','sku',
+                     'item','ware','goods','product','rec','waterfall','guess','like'];
         var els = document.getElementsByTagName('*');
         for (var i = 0; i < els.length; i++) {
           var el = els[i];
@@ -156,15 +170,15 @@ function neutralize() {
           for (var j = 0; j < kws.length; j++) { if (t.indexOf(kws[j]) >= 0) { hit = true; break; } }
           if (!hit) continue;
           var p = el, depth = 0, hidden = false;
-          while (p && depth < 8) {
+          while (p && depth < 10) {
             var cls = (p.className || '').toString().toLowerCase();
-            if (cls.indexOf('floor') >= 0 || cls.indexOf('recommend') >= 0 ||
-                cls.indexOf('feed') >= 0 || cls.indexOf('active') >= 0 ||
-                cls.indexOf('mod') >= 0 || cls.indexOf('card') >= 0 ||
-                cls.indexOf('sku') >= 0 || cls.indexOf('item') >= 0) {
-              if (p.style) p.style.setProperty('display', 'none', 'important');
-              hidden = true; break;
+            for (var c = 0; c < clsKw.length; c++) {
+              if (cls.indexOf(clsKw[c]) >= 0) {
+                if (p.style) p.style.setProperty('display', 'none', 'important');
+                hidden = true; break;
+              }
             }
+            if (hidden) break;
             p = p.parentElement; depth++;
           }
           if (!hidden && el.parentElement && el.parentElement.style) {
