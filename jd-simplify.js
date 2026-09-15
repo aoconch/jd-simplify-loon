@@ -1,14 +1,21 @@
-// 京东首页/我的页精简 · Loon http-response 脚本 v3.2.1
+// 京东首页/我的页精简 · Loon http-response 脚本 v4.0.0
 //
-// 关键认知（经多份抓包验证）：
-//  - 京东首页是一个 React H5 网页（host=pro.m.jd.com），推荐流"猜你喜欢"在网页内
-//    通过 JSONP 回调 getRecommendPageSourceCallback 动态加载，不走 api.m.jd.com 的
-//    JSON 接口。因此单纯改写 JSON 接口对首页可见内容无效。
-//  - Loon 的 http-response 有内部 body 体积上限（介于 ~40KB 与 345KB 之间），
-//    345KB 的 basicConfig 无法被改写，故本脚本不再依赖它。
-//  - 本脚本双路处理：
-//      (1) HTML 网页（首页 webview）：注入 JS 让推荐流回调失效 + 按内容隐藏推荐/广告块。
-//      (2) JSON 接口（我的页模块 / 小接口）：递归清理广告字段。
+// ── v4.0 路线变更（重要）────────────────────────────────────────────
+// v3.x 一直在"钩原生桥 getRecommendPageSourceCallback"，以为它是推荐流数据源。
+// HAR #338 证明这条路是错的：
+//   * 脚本确实注入成功了（响应体里有 JD-SIMPLIFY-INJECTED / v3.2.1）——注入没问题；
+//   * 但 getRecommendPageSource 的产出是 window.__native_container_aid__，
+//     最终被 push 进 __prepare_tracking__.tasks 只用于 PV 埋点，跟渲染无关 -> 锁它零效果；
+//   * 首页 HTML 是空壳（可见中文只有标题"挑好物逛京东"），SSR 仅 2 个楼层，
+//     真正的东西由远程 JS 包（ifloors）和原生 Taro 模块渲染。
+// 因此 v4.0 改为"网络层硬拦截 + 掐断楼层 JS 包"：不再试图在 DOM/桥接层做精细化手术。
+// ──────────────────────────────────────────────────────────────────
+//
+// 本脚本在 HTML 分支做两件事：
+//   (1) 把楼层 JS 包的 URL 里的 "ifloors" 打坏 -> 包 404 -> 自定义楼层（二楼/浏览历史/为你推荐）不渲染。
+//       （比在 [Rule] 里拦更稳：不需要给图片 CDN 360buyimg 开 MITM，避免拖慢整页。）
+//   (2) 注入一个轻量兜底脚本：抑制页面报错 + 按关键词隐藏漏网的推荐/广告块。
+// JSON 分支：清理 api.m.jd.com 返回里的广告字段。
 
 // ===== 常量与工具函数（必须放在 IIFE / 注入函数之前） =====
 
@@ -81,108 +88,23 @@ function stripAds(node) {
   }
 }
 
-// ===== 注入到首页网页里的"去推荐/去广告"逻辑（运行在浏览器环境） =====
-// 用 neutralize.toString() 序列化，避免手写字符串转义。必须自包含、零外部依赖。
+// ===== 注入到首页网页里的兜底逻辑（运行在浏览器环境） =====
+// 自包含、零外部依赖。v4.0 起不再钩任何原生桥（已证明无效），只做静默兜底。
 function neutralize() {
   try {
-    // 吞掉注入可能引发的任何报错，绝不拖垮页面
     window.onerror = function () { return true; };
-    try { window.__JD_SIMPLIFY__ = 'v3.2.1'; } catch (e) {}
+    try { window.__JD_SIMPLIFY__ = 'v4.0.0'; } catch (e) {}
 
-    // 锁死 window 上的某个原生回调：无条件安装（关键修复点）。
-    // 旧的 v3.0/3.1 用 if(!(KEY in window)) 守卫，若页面先赋值则锁被跳过
-    // -> 回调照常工作 -> feed 照常渲染，这正是"注入成功却毫无效果"的根因。
-    //
-    // 不是简单替换成 noop：那样页面的 Promise 会永久挂起（页面可能卡在 loading）。
-    // 正确做法是"吞掉真实数据、改喂一份空数据"：真实回调收到 status=0 但
-    // data 为空 -> 页面自身逻辑 resolve 成空串 -> feed 不渲染且页面正常继续。
-    function lockCallback(name, emptyPayload) {
-      var real = null;
-      var fed = false;
-      function feedEmpty() {
-        if (fed) return;
-        if (typeof real !== 'function') { return; }
-        fed = true;
-        try { real(emptyPayload); } catch (e) {}
-      }
-      var stub = function () { feedEmpty(); };
-      try {
-        // 若页面已先赋值，先把真实函数抢下来，稍后喂空数据
-        try { if (typeof window[name] === 'function') { real = window[name]; } } catch (e) {}
-        Object.defineProperty(window, name, {
-          configurable: false,
-          enumerable: true,
-          get: function () { return stub; },
-          set: function (v) {
-            real = v;
-            // 异步喂空：让 Promise executor 先跑完（避免同步重入）
-            try { setTimeout(feedEmpty, 0); } catch (e) { feedEmpty(); }
-          }
-        });
-      } catch (e) {
-        try { window[name] = stub; } catch (e2) {}
-      }
-      // 兜底：若 setter 一直没被触发（页面在 defineProperty 之前已赋值且我们已抓取 real）
-      try { setTimeout(feedEmpty, 50); setTimeout(feedEmpty, 800); } catch (e) {}
-      return feedEmpty;
-    }
-
-    // (1) 锁死推荐回调：页面用 window.getRecommendPageSourceCallback = 真实函数 注册，
-    //     原生层 (JDURecommendH5Bridge.getRecommendPageSource) 拿到数据后回调它，
-    //     再把 pageSource 喂给 nativeContainerAid 决定是否渲染 feed。
-    //     data 为空 -> 页面自身解析为 "" -> 推荐不渲染。
-    lockCallback('getRecommendPageSourceCallback', '{"status":"0","data":{}}');
-
-    // (2) 冗余：从源头拦截原生桥 callNative（若 XWebView 可写）。
-    //     凡是推荐/feed 相关调用一律拦截；其他原生调用照常放行（不破坏页面）。
-    //     XWebView 多半是原生 App 注入的只读对象，此步可能静默失效，故仅作冗余。
-    function isFeedCall() {
-      for (var k = 0; k < arguments.length; k++) {
-        if (typeof arguments[k] === 'string') {
-          var s = arguments[k];
-          if (s.indexOf('Recommend') >= 0 || s.indexOf('recommend') >= 0 ||
-              s.indexOf('Feed') >= 0 || s.indexOf('feed') >= 0 ||
-              s.indexOf('Guess') >= 0 || s.indexOf('guess') >= 0) return true;
-        }
-      }
-      return false;
-    }
-    function hookCallNative(xw) {
-      try {
-        if (xw && typeof xw.callNative === 'function') {
-          var _cn = xw.callNative;
-          xw.callNative = function () {
-            if (isFeedCall.apply(null, arguments)) return;
-            return _cn.apply(this, arguments);
-          };
-          return true;
-        }
-      } catch (e) {}
-      return false;
-    }
-    try {
-      if (!('XWebView' in window)) {
-        var _xw = null;
-        Object.defineProperty(window, 'XWebView', {
-          configurable: true,
-          enumerable: true,
-          get: function () { return _xw; },
-          set: function (v) { try { hookCallNative(v); } catch (e) {} _xw = v; }
-        });
-      } else {
-        hookCallNative(window.XWebView);
-      }
-    } catch (e) {}
-
-    // (3) 内容感知隐藏（兜底）：扫描含推荐关键词的叶子文本，上溯隐藏楼层容器。
+    // 内容感知隐藏（兜底）：扫描含推荐关键词的叶子文本，上溯隐藏楼层容器。
     function jdHide() {
       try {
         var kws = ['猜你喜欢', '为你推荐', '热门推荐', '发现好货', '今日推荐',
-                   '更多推荐', '看了又看', '回购榜', '排行榜', '逛京东',
-                   '大促', '百亿补贴', '新人专享', '限时秒杀', '精选好物',
-                   '猜你喜欢', '好物精选', '个性推荐'];
-        var clsKw = ['floor','recommend','feed','active','mod','card','sku',
-                     'item','ware','goods','product','rec','waterfall','guess','like'];
+                   '更多推荐', '看了又看', '回购榜', '排行榜', '大促',
+                   '百亿补贴', '新人专享', '限时秒杀', '精选好物', '好物精选',
+                   '个性推荐'];
+        var clsKw = ['floor', 'recommend', 'feed', 'active', 'mod', 'card',
+                     'sku', 'item', 'ware', 'goods', 'product', 'rec',
+                     'waterfall', 'guess', 'like'];
         var els = document.getElementsByTagName('*');
         for (var i = 0; i < els.length; i++) {
           var el = els[i];
@@ -190,7 +112,9 @@ function neutralize() {
           var t = (el.textContent || '').trim();
           if (t.length === 0 || t.length > 24) continue;
           var hit = false;
-          for (var j = 0; j < kws.length; j++) { if (t.indexOf(kws[j]) >= 0) { hit = true; break; } }
+          for (var j = 0; j < kws.length; j++) {
+            if (t.indexOf(kws[j]) >= 0) { hit = true; break; }
+          }
           if (!hit) continue;
           var p = el, depth = 0, hidden = false;
           while (p && depth < 10) {
@@ -211,13 +135,26 @@ function neutralize() {
       } catch (e) {}
     }
 
-    function jdObserve() {
-      if (!window.MutationObserver) { jdHide(); return; }
+    // 楼层 JS 包若被网络层漏掉，这里再补一刀：移除已插入的 ifloors 脚本节点
+    function killIfloorNodes() {
       try {
-        var mo = new MutationObserver(function () { jdHide(); });
-        mo.observe(document.documentElement, { childList: true, subtree: true });
+        var ss = document.querySelectorAll('script[src*="ifloors"], link[href*="ifloors"]');
+        for (var i = 0; i < ss.length; i++) {
+          if (ss[i].parentNode) ss[i].parentNode.removeChild(ss[i]);
+        }
       } catch (e) {}
-      jdHide();
+    }
+
+    function jdTick() { jdHide(); killIfloorNodes(); }
+
+    function jdObserve() {
+      if (window.MutationObserver) {
+        try {
+          var mo = new MutationObserver(function () { jdTick(); });
+          mo.observe(document.documentElement, { childList: true, subtree: true });
+        } catch (e) {}
+      }
+      jdTick();
     }
 
     if (document.readyState === 'loading') {
@@ -226,19 +163,16 @@ function neutralize() {
       jdObserve();
     }
     window.addEventListener('load', function () {
-      setTimeout(jdHide, 400);
-      setTimeout(jdHide, 1200);
-      setTimeout(jdHide, 2500);
+      setTimeout(jdTick, 400);
+      setTimeout(jdTick, 1200);
+      setTimeout(jdTick, 2500);
     });
   } catch (e) {}
 }
 
 var JD_INJECT_JS = '(' + neutralize.toString() + ')();';
-var JD_INJECT_CSS = ''; // 主要依赖 JS 内容感知隐藏，CSS 留空避免误伤布局
 var JD_INJECT_MARKER = '<!--JD-SIMPLIFY-INJECTED-->';
-var JD_INJECT_BLOCK = JD_INJECT_MARKER +
-  (JD_INJECT_CSS ? '<style>' + JD_INJECT_CSS + '</style>' : '') +
-  '<script>' + JD_INJECT_JS + '</script>';
+var JD_INJECT_BLOCK = JD_INJECT_MARKER + '<script>' + JD_INJECT_JS + '</script>';
 
 function isHtmlResponse(resp, body) {
   if (resp && resp.headers) {
@@ -262,6 +196,13 @@ function injectIntoHtml(html) {
   return out;
 }
 
+// 打坏楼层 JS 包 URL：//storage11.360buyimg.com/ifloors/<styleId>/static/js/main.<hash>.js
+// 改成 ifloors-disabled 后 CDN 返回 404，自定义楼层（二楼 / 浏览历史 / 为你推荐）就不会渲染。
+function disableFloorBundles(html) {
+  if (html.indexOf('ifloors') < 0) return html;
+  return html.replace(/ifloors/g, 'ifloors-disabled');
+}
+
 // ===== 主逻辑 =====
 (function () {
   try {
@@ -272,11 +213,11 @@ function injectIntoHtml(html) {
     // --- 网页（首页 webview）分支 ---
     if (isHtmlResponse($response, body)) {
       var isHomeWebView = /pro\.m\.jd\.com/.test(url) ||
-        /getRecommendPageSourceCallback/.test(body) ||
         /ipaas-floor-app/.test(body) ||
+        /ifloors/.test(body) ||
         /mall\/active/.test(url);
       if (isHomeWebView && typeof body === 'string') {
-        var newHtml = injectIntoHtml(body);
+        var newHtml = injectIntoHtml(disableFloorBundles(body));
         $done({
           status: $response.status,
           headers: Object.assign({}, $response.headers, { "X-JD-WebView": "1" }),
@@ -288,7 +229,7 @@ function injectIntoHtml(html) {
       return;
     }
 
-    // --- JSON 接口分支（我的页模块 / 小接口） ---
+    // --- JSON 接口分支 ---
     var obj;
     if (typeof body === 'string') {
       try { obj = JSON.parse(body); } catch (e) { $done({ body: body }); return; }
